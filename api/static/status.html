@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>B's Status</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #00e676;
+      --red: #ff1744;
+      --bg: #111;
+      --transition: 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: 'Space Mono', monospace;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .blob {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      transition: background var(--transition);
+    }
+
+    .blob::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: inherit;
+      filter: blur(120px);
+      opacity: 0.25;
+      transform: scale(1.1);
+    }
+
+    body.on-call .blob    { background: radial-gradient(ellipse at 50% 50%, #ff1744 0%, transparent 70%); }
+    body.not-on-call .blob { background: radial-gradient(ellipse at 50% 50%, #00e676 0%, transparent 70%); }
+
+    .card {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 3rem 4rem;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(24px);
+      border-radius: 4px;
+      transition: border-color var(--transition);
+    }
+
+    body.on-call .card     { border-color: rgba(255,23,68,0.3); }
+    body.not-on-call .card { border-color: rgba(0,230,118,0.3); }
+
+    .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-bottom: 2rem;
+      transition: background var(--transition), box-shadow var(--transition);
+    }
+
+    body.on-call .dot {
+      background: var(--red);
+      box-shadow: 0 0 0 4px rgba(255,23,68,0.2), 0 0 24px rgba(255,23,68,0.6);
+      animation: pulse-red 1.4s ease-in-out infinite;
+    }
+
+    body.not-on-call .dot {
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(0,230,118,0.2), 0 0 24px rgba(0,230,118,0.5);
+    }
+
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(255,23,68,0.2), 0 0 24px rgba(255,23,68,0.6); }
+      50%       { box-shadow: 0 0 0 8px rgba(255,23,68,0.1), 0 0 40px rgba(255,23,68,0.9); }
+    }
+
+    .label {
+      font-size: clamp(1.6rem, 5vw, 2.6rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      transition: color var(--transition);
+      white-space: nowrap;
+    }
+
+    .label .name { color: #fff; }
+
+    body.on-call .label .status    { color: var(--red); }
+    body.not-on-call .label .status { color: var(--green); }
+
+    .label .qualifier {
+      font-size: 0.55em;
+      font-style: italic;
+      font-weight: 400;
+      color: rgba(255,255,255,0.5);
+    }
+
+    .footer {
+      position: relative;
+      z-index: 1;
+      margin-top: 2rem;
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      color: rgba(255,255,255,0.2);
+      text-transform: uppercase;
+    }
+
+    .footer span {
+      transition: color var(--transition);
+    }
+
+    body.on-call .footer span    { color: rgba(255,23,68,0.5); }
+    body.not-on-call .footer span { color: rgba(0,230,118,0.4); }
+
+    body.error .dot   { background: #888; box-shadow: 0 0 0 4px rgba(136,136,136,0.15); animation: none; }
+    body.error .label .status { color: #888; }
+  </style>
+</head>
+<body class="not-on-call">
+
+  <div class="blob"></div>
+
+  <div class="card">
+    <div class="dot"></div>
+    <div class="label">
+      <span class="name">b&nbsp;</span><span class="status" id="statusText">is <em class="qualifier">not</em> on a call</span>
+    </div>
+  </div>
+
+  <div class="footer">polling every <span>3s</span> &nbsp;·&nbsp; last checked <span id="lastChecked">—</span></div>
+
+  <script>
+    const POLL_MS = 3000;
+    const ENDPOINT = 'http://127.0.0.1:8080/get';
+
+    const body        = document.body;
+    const statusText  = document.getElementById('statusText');
+    const lastChecked = document.getElementById('lastChecked');
+
+    function setStatus(onCall) {
+      body.classList.remove('on-call', 'not-on-call', 'error');
+      body.classList.add(onCall ? 'on-call' : 'not-on-call');
+      statusText.innerHTML = onCall
+        ? 'is on a call'
+        : 'is <em class="qualifier">not</em> on a call';
+    }
+
+    function setError() {
+      body.classList.remove('on-call', 'not-on-call');
+      body.classList.add('error');
+      statusText.textContent = 'status unknown';
+    }
+
+    async function poll() {
+      try {
+        const res  = await fetch(ENDPOINT, { cache: 'no-store' });
+        const text = (await res.text()).trim();
+        const val  = parseInt(text, 10);
+        if (isNaN(val)) { setError(); }
+        else            { setStatus(val === 1); }
+      } catch {
+        setError();
+      }
+      lastChecked.textContent = new Date().toLocaleTimeString();
+    }
+
+    poll();
+    setInterval(poll, POLL_MS);
+  </script>
+</body>
+</html>
