@@ -14,6 +14,9 @@ func enableCors(w http.ResponseWriter) {
 func main() {
     http.HandleFunc("/get", func (w http.ResponseWriter, r *http.Request) {
         enableCors(w)
+
+        fmt.Println("test")
+
         var state int
         if (on_a_call) {
             state = 1
